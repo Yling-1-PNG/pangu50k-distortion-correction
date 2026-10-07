@@ -46,4 +46,5 @@
 - 确认队友现有私有仓库 `Yling-1-PNG/pangu50k-distortion-correction` 的 `main` 起点为 `5c1804c`，本机 GitHub 账号有推送权限；正式项目目录已接入其历史，保留 `test.v`，不再创建第二个远端仓库。
 - 增加团队协作规范、README、忽略规则和 Codex 工作边界。正式可维护文档、模型脚本及 PDF 底稿放在仓库；`build/` 和厂家资料整包不提交。
 - 初始方案 Markdown 增加 A.12 协作附录；PDF 更新至 23 页，原 22 页内容流逐页相同，新增页已渲染目视检查。旧 PDF 备份在 `build/initial_plan_before_collaboration_20261007.pdf`。
-- 实际远端推送与读回状态以本节后续记录为准；没有板卡连接，硬件验证状态不变。
+- 运行 `py -3.10 -B -m unittest discover -s tools -p 'test_*model.py' -v`，8 项测试通过；`git diff --cached --check` 无问题。审查了 20 个待提交文件，未包含 `build/` 或厂家资料整包。
+- 导入提交 `d3048dc` 已推送到队友私有仓库 `main`，`git ls-remote` 读回同一 SHA；队友原有 `5c1804c` 和 `test.v` 保留。后续本节记录更新会另行提交并推送。没有板卡连接，硬件验证状态不变。
