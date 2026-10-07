@@ -1,0 +1,31 @@
+# Local builds, generated bitstreams, downloaded vendor packages and raw captures.
+/build/
+/data/
+/vendor/
+/tmp/
+/output/
+
+# Python and editor state.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+.vscode/
+.idea/
+
+# Tool-generated files anywhere in the source tree. Keep .pds/.fdc/.idf configs.
+*.log
+*.sbit
+*.bit
+*.rtr
+*.db
+*.bak
+*.tmp
+
+# Credentials and machine-local configuration.
+.env
+.env.*
+!.env.example
+*.license
+*.lic
