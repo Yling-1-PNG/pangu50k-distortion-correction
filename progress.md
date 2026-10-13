@@ -59,5 +59,6 @@
 - Lite HMIC IP 重生成成功（0 错误、0 警告），但生成器覆盖了板级 FDC，第一次布局布线因 DQS 引脚冲突而失败，旧 2023 位流未更新。随后从原始包恢复 MES50HP 的板级 FDC，再应用上述电压修正；重新编译、映射、布线、时序报告和新位流生成成功。需注意原始 `.idf` 的部分 PAD 参数与板级 FDC 不一致，后续若 DDR3 自检异常应优先审查该处，不能仅凭离线构建排除问题。
 - 通过 USB Cable II 以 1 MHz 将新生成的 `build/legacy_ddr3/07_ddr3_test/ipcore/ddr3_test/pnr/generate_bitstream/test_ddr.sbit` 下载到 FPGA 易失配置（未写 Flash）。配置工具报告 `Program successful`、DONE=1、CRC/ID 错误位=0。用户现场确认 LED1 初始化完成常亮、LED2 错误指示常灭、LED3 心跳闪烁、LED4 PLL 锁定常亮，与厂家自检说明一致。因此 DDR3 初始化及例程读写自检通过；尚未测长时间稳定性、容量覆盖或实际吞吐量。
 - 用户表示摄像头设备已备好，要求前置模块全部测试成功后提醒接入。当前状态：LED/JTAG 与 DDR3 自检通过，HDMI 色条尚未实板验证。摄像头保持未接；HDMI 等前置项通过后主动提醒断电并核对摄像头接线。
-- 新增仓库级 `.agents/skills/pango-pds-workflow/`，用于团队复用 VS Code/Codex + PDS Lite 的 PGL50H 开发与实板验证流程。入口按需链接构建/IP 与板卡验证参考；只读 `audit_fdc.ps1` 对已修正 LED/DDR3 约束通过，并检出厂家原始 DDR3 FDC 中 P20/K18/R8/R9 的 1.2 V 错误。`AGENTS.md`、README 和团队规范加入调用入口；本次只创建本地工作树文件，未提交/推送。
+- 新增仓库级 `.agents/skills/pango-pds-workflow/`，用于团队复用 VS Code/Codex + PDS Lite 的 PGL50H 开发与实板验证流程。入口按需链接构建/IP 与板卡验证参考；只读 `audit_fdc.ps1` 对已修正 LED/DDR3 约束通过，并检出厂家原始 DDR3 FDC 中 P20/K18/R8/R9 的 1.2 V 错误。`AGENTS.md`、README 和团队规范加入调用入口；随后与 HDMI 准备记录一并提交到远程分支。
 - HDMI 色条前置测试：按用户要求，先不接 HDMI 线、不下载到板。清除官方 `05_hdmi_test` 测试副本 FDC 中重复的旧板引脚，补 50/148.5/10 MHz 时钟约束，并将视频复位留在像素时钟域。PDS Lite 完整生成新 `.sbit`；实际像素时钟约束下慢角 setup WNS +1.826 ns，内部时钟时序通过。外部 HDMI IO 仍有未约束警告，未进行屏幕验证。详见 `docs/HDMI色条_离线准备_2026-10-14.md`。
+- 已将本轮仓库文档和团队 skill 提交到 `bringup/hdmi-colorbar` 分支并推送 `origin`；厂家例程副本和 `.sbit` 均未上传。按团队规范尝试创建 PR，GitHub 集成返回 403 `Resource not accessible by integration`，需仓库成员在 GitHub 网页创建/审核 PR；当前没有 PR，也没有合并到 `main`。
