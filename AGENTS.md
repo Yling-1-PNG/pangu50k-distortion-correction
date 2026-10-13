@@ -4,6 +4,7 @@
 - This project's topic is FPGA arbitrary-angle distortion correction. Do not substitute object detection or YOLO from a different contest task.
 - Use `docs/紫光同创_FPGA_任意角度畸变矫正_初始方案.md` as an existing proposal, not proof that its hardware assumptions, PDS commands, or performance targets have been verified.
 - VS Code and Codex can edit sources and analyze reports; PDS is the synthesis, implementation, bitstream, and download backend. Check the installed PDS interface before claiming a command-line build works.
+- For PGL50H/MES50HP RTL, IP, FDC, PDS build, or hardware bring-up work, use the repo-local `$pango-pds-workflow` skill in `.agents/skills/pango-pds-workflow/`. It is not needed for PC-only image-model edits.
 - When asked to create a project document, save it in the requested location and read the saved file before reporting completion.
 - Before team changes, read `docs/团队协作规范.md` for branch, file, evidence and hardware-test boundaries. Work in a focused branch or worktree; preserve teammates' uncommitted work and existing remote history.
 - Keep `build/`, raw captures, downloaded vendor packages, credentials and PDS-generated output out of commits. Track authoritative RTL, constraints, project/IP configuration and tests after verifying their source and sharing rights.

@@ -48,3 +48,16 @@
 - 初始方案 Markdown 增加 A.12 协作附录；PDF 更新至 23 页，原 22 页内容流逐页相同，新增页已渲染目视检查。旧 PDF 备份在 `build/initial_plan_before_collaboration_20261007.pdf`。
 - 运行 `py -3.10 -B -m unittest discover -s tools -p 'test_*model.py' -v`，8 项测试通过；`git diff --cached --check` 无问题。审查了 20 个待提交文件，未包含 `build/` 或厂家资料整包。
 - 导入提交 `d3048dc` 已推送到队友私有仓库 `main`，`git ls-remote` 读回同一 SHA；队友原有 `5c1804c` 和 `test.v` 保留。后续本节记录更新会另行提交并推送。没有板卡连接，硬件验证状态不变。
+
+## 2026-10-14
+
+- 用户已连接板卡电源与 USB Cable。Windows 当前将 FTDI USB Composite、Converter A/B、COM10/COM11 全部报告为正常，设备问题码 0；这只证明驱动层恢复。
+- PDS Lite 2022.2-SP1 Fabric Configuration 通过 USB Cable II 以 1 MHz 扫描 JTAG 链，识别到 PGL50H，下载前 DONE 位为 1。
+- 复核 `build/legacy_led/01_led_test` 的 PGL50H/-6/FBG484 器件、LED1–8 引脚 B2/A2/B3/A3/C5/A5/F7/F8 与《MES50HP开发板硬件使用手册_1V1.pdf》第 33–34 页相符；KEY1=K18、50 MHz 时钟=P20。现有位流为 2026-10-03 的离线构建产物。旧工程中的时钟约束被推断为 1 MHz，不能把其时序报告当作 50 MHz 验收依据。
+- 仅用 JTAG 将 LED `.sbit` 下载到 FPGA 易失配置，未写 Flash。配置工具报告 `Program successful`、DONE=1、CRC/ID 错误位=0；用户现场反馈 LED1–8 轮流亮，KEY1 可复位。因此 LED/JTAG 功能测试通过。下一阶段单独准备 DDR3 实板测试，不据此推断 DDR3、HDMI 或摄像头已经通过。
+- 启动 DDR3 实板测试：从 `07_ddr3_test.rar` 解出测试副本。原厂 `ddr_test.fdc` 将 P20 时钟、K18 按键、R8/R9 UART 错误设为 1.2 V，与硬件手册所示 3.3 V Bank/接口不符；在 `build/legacy_ddr3` 副本中修为 LVCMOS33，并把 UART TX 驱动强度从不合法的 2 改为 8。DDR3 Bank 3 继续保持 1.5 V。原始资料包未改动。
+- Lite HMIC IP 重生成成功（0 错误、0 警告），但生成器覆盖了板级 FDC，第一次布局布线因 DQS 引脚冲突而失败，旧 2023 位流未更新。随后从原始包恢复 MES50HP 的板级 FDC，再应用上述电压修正；重新编译、映射、布线、时序报告和新位流生成成功。需注意原始 `.idf` 的部分 PAD 参数与板级 FDC 不一致，后续若 DDR3 自检异常应优先审查该处，不能仅凭离线构建排除问题。
+- 通过 USB Cable II 以 1 MHz 将新生成的 `build/legacy_ddr3/07_ddr3_test/ipcore/ddr3_test/pnr/generate_bitstream/test_ddr.sbit` 下载到 FPGA 易失配置（未写 Flash）。配置工具报告 `Program successful`、DONE=1、CRC/ID 错误位=0。用户现场确认 LED1 初始化完成常亮、LED2 错误指示常灭、LED3 心跳闪烁、LED4 PLL 锁定常亮，与厂家自检说明一致。因此 DDR3 初始化及例程读写自检通过；尚未测长时间稳定性、容量覆盖或实际吞吐量。
+- 用户表示摄像头设备已备好，要求前置模块全部测试成功后提醒接入。当前状态：LED/JTAG 与 DDR3 自检通过，HDMI 色条尚未实板验证。摄像头保持未接；HDMI 等前置项通过后主动提醒断电并核对摄像头接线。
+- 新增仓库级 `.agents/skills/pango-pds-workflow/`，用于团队复用 VS Code/Codex + PDS Lite 的 PGL50H 开发与实板验证流程。入口按需链接构建/IP 与板卡验证参考；只读 `audit_fdc.ps1` 对已修正 LED/DDR3 约束通过，并检出厂家原始 DDR3 FDC 中 P20/K18/R8/R9 的 1.2 V 错误。`AGENTS.md`、README 和团队规范加入调用入口；本次只创建本地工作树文件，未提交/推送。
+- HDMI 色条前置测试：按用户要求，先不接 HDMI 线、不下载到板。清除官方 `05_hdmi_test` 测试副本 FDC 中重复的旧板引脚，补 50/148.5/10 MHz 时钟约束，并将视频复位留在像素时钟域。PDS Lite 完整生成新 `.sbit`；实际像素时钟约束下慢角 setup WNS +1.826 ns，内部时钟时序通过。外部 HDMI IO 仍有未约束警告，未进行屏幕验证。详见 `docs/HDMI色条_离线准备_2026-10-14.md`。

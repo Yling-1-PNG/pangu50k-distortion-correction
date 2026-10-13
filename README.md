@@ -22,6 +22,8 @@ PDS Lite 是综合、布局布线、位流和下载工具；VS Code/Codex 负责
 
 协作分支、PR、证据和文件边界见 [团队协作规范](docs/团队协作规范.md)。项目约束见 [AGENTS.md](AGENTS.md)，赛题需求以 [官方题面](docs/紫光赛题.pdf) 为准。方案 Markdown 是可编辑正文；对应 PDF 由一名集成负责人更新，以减少二进制冲突。历史底稿在 `tools/assets/initial_plan_base_17p.pdf`，更新脚本为 `tools/append_plan_update.py`。
 
+PGL50H/PDS 开发可在仓库根目录用 `$pango-pds-workflow` 调用团队 skill；Codex 也可在匹配的任务中自动选用。skill 位于 `.agents/skills/pango-pds-workflow/`，随仓库共享，无需复制到每位成员的个人 skills 目录。它包含按需加载的构建/上板参考和只读 FDC 预检脚本；具体 PDS 安装路径、板卡修订、参考例程与实测结果仍由各成员在本机核实。
+
 ## 尚未验证
 
-真实 OV5640 鱼眼内参与畸变参数、板卡接线和 IO 电平、DDR3/HDMI 实际运行、端到端帧率与延迟、FPGA 畸变 RTL、MTF50/SFR 与最终时序闭合，均需到货后以实物和测量记录确认。
+真实 OV5640 鱼眼内参与畸变参数、HDMI/摄像头实际运行、端到端帧率与延迟、FPGA 畸变 RTL、MTF50/SFR 与最终时序闭合，仍需实物和测量记录确认。2026-10-14 的 LED/JTAG 与 DDR3 厂家例程自检已在本机板卡通过；细节及边界见 `progress.md`，不能外推为视频链路或长时间 DDR3 性能通过。
