@@ -99,7 +99,12 @@ if ($BrownRegistersJson) {
     }
 }
 
-$projectFiles = @(Get-ChildItem -LiteralPath $referenceRoot -File -Filter '*.pds')
+$projectFiles = @(Get-ChildItem -LiteralPath $referenceRoot -File -Filter '*.pds' |
+    Where-Object {
+        $text = Get-Content -LiteralPath $_.FullName -Raw
+        $text -match '\(_device PGL50H\)' -and
+        $text -match 'source/rtl/DDR3_50H/DDR3_50H\.idf'
+    })
 if ($projectFiles.Count -ne 1) {
     throw "Expected exactly one reference PDS project; found $($projectFiles.Count)"
 }
@@ -154,6 +159,11 @@ $targetRtl = Join-Path $outputRoot 'source\rtl\correction'
 New-Item -ItemType Directory -Path $targetRtl -Force | Out-Null
 foreach ($file in $rtlFiles) {
     Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $targetRtl $file.Name)
+}
+$memoryDirectory = Join-Path $outputRoot 'source\rtl\data'
+New-Item -ItemType Directory -Path $memoryDirectory -Force | Out-Null
+foreach ($memory in @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'rtl\data') -File -Filter '*.mem')) {
+    Copy-Item -LiteralPath $memory.FullName -Destination (Join-Path $memoryDirectory $memory.Name) -Force
 }
 
 $topSource = Get-Content -LiteralPath (Join-Path $repoRoot 'rtl\pgl50h_camera_distortion_top.v') -Raw
@@ -335,9 +345,7 @@ if ($OptimizeHoldTiming -or $PlacementSeed -gt 0 -or
 
 $fdcPath = Join-Path $outputRoot 'hdmi_ddr_ov5640_top.fdc'
 $fdcText = Get-Content -LiteralPath $fdcPath -Raw
-if (-not $fdcText.Contains('u_DDR3_50H')) {
-    throw 'Expected vendor DDR3 hierarchy was not present in the board FDC.'
-}
+if ($fdcText.Contains('u_DDR3_50H')) {
 $fdcText = [regex]::Replace($fdcText, '(?m)^.*cmos2_[^\r\n]*(?:\r?\n|$)', '')
 $fdcText = $fdcText.Replace('u_DDR3_50H', 'u_correction_core.ddr3')
 if ([regex]::Matches($fdcText, [regex]::Escape('-multiply_by {27} -divide_by {20}')).Count -ne 1 -or
@@ -389,6 +397,11 @@ if ($fdcText -notmatch 'create_generated_clock -name \{pix_clk\}[^\r\n]*u_pll\.c
     $fdcText -notmatch 'create_generated_clock -name \{clk_25M\}[^\r\n]*u_pll\.clkout2[^\r\n]*-multiply_by \{1\} -divide_by \{2\}' -or
     $fdcText -match 'u_pll\.clkout3') {
     throw 'PLL output clock constraints do not match the official 37.125/10/25 MHz configuration.'
+}
+} elseif (-not $fdcText.Contains('u_correction_core.ddr3') -or
+          $fdcText -notmatch 'p:key1' -or
+          $fdcText -notmatch 'create_generated_clock -name \{pix_clk\}[^\r\n]*u_pll\.clkout0[^\r\n]*-multiply_by \{297\} -divide_by \{400\}') {
+    throw 'Reference FDC is neither the expected vendor baseline nor the prepared board FDC.'
 }
 if ($ConstrainCameraConfigClock) {
     # Vendor counter 0..1249 takes 1250 edges per toggle. The optional owner
