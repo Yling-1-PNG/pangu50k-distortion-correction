@@ -55,10 +55,98 @@ def output_camera_matrix(
     """balance=0 favors a filled rectilinear image; balance=1 retains more FOV."""
     if width <= 0 or height <= 0 or not np.isfinite(balance) or not 0 <= balance <= 1:
         raise ValueError("invalid image size or balance (must be 0..1)")
-    return cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(
+    output = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(
         _camera_matrix(camera_matrix), _distortion(distortion).reshape(4, 1),
         (width, height), np.eye(3), balance=float(balance), new_size=(width, height),
     )
+    if not 0 <= output[0, 2] < width or not 0 <= output[1, 2] < height:
+        raise ValueError("automatic fisheye output principal point is outside image; choose a centered output focal length")
+    return output
+
+
+def centered_output_camera_matrix(width: int, height: int, focal_px: float) -> np.ndarray:
+    """Explicit rectilinear view; focal length trades field of view for crop/edge quality."""
+    if width <= 0 or height <= 0 or not np.isfinite(focal_px) or focal_px <= 0:
+        raise ValueError("invalid output image size or focal length")
+    return np.array([[focal_px, 0, (width - 1) / 2],
+                     [0, focal_px, (height - 1) / 2], [0, 0, 1]], dtype=np.float64)
+
+
+def rotation_safe_sensor_roi(width: int, height: int, camera_matrix: np.ndarray,
+                             distortion: np.ndarray, output_focal_px: float) -> dict:
+    """Conservative centered ROI whose pixels stay in sensor-array bounds at any angle.
+
+    This covers only the rectangular sensor coordinate domain. It cannot detect
+    the lens image circle, vignetting, or other physically unusable source pixels.
+    The output virtual focal length is isotropic, and rotation is rigid/in-plane.
+    """
+    if width <= 0 or height <= 0 or not np.isfinite(output_focal_px) or output_focal_px <= 0:
+        raise ValueError("invalid image size or output focal length")
+    k = _camera_matrix(camera_matrix)
+    d = _distortion(distortion)
+    cx, cy = float(k[0, 2]), float(k[1, 2])
+    if not (0 <= cx <= width - 1 and 0 <= cy <= height - 1):
+        raise ValueError("camera principal point must be inside the sensor array")
+
+    theta_limit = min(cx / k[0, 0], (width - 1 - cx) / k[0, 0],
+                      cy / k[1, 1], (height - 1 - cy) / k[1, 1])
+    if theta_limit <= 0:
+        raise ValueError("sensor array has no positive-radius region around its principal point")
+
+    def theta_distorted(theta: float) -> float:
+        theta2 = theta * theta
+        return float(theta * (1 + theta2 * (d[0] + theta2 * (d[1]
+                     + theta2 * (d[2] + theta2 * d[3])))))
+
+    theta_grid = np.linspace(0.0, np.pi / 2 - 1e-7, 4097)
+    theta2 = theta_grid * theta_grid
+    theta_values = theta_grid * (1 + theta2 * (d[0] + theta2 * (d[1]
+                    + theta2 * (d[2] + theta2 * d[3]))))
+    crossing = np.flatnonzero(theta_values >= theta_limit)
+    upper_index = int(crossing[0]) if crossing.size else len(theta_grid) - 1
+    derivative_roots = np.polynomial.polynomial.polyroots(
+        [1.0, 3 * d[0], 5 * d[1], 7 * d[2], 9 * d[3]])
+    upper_theta2 = float(theta_grid[upper_index] ** 2)
+    non_monotonic_roots = [root for root in derivative_roots
+                           if abs(float(np.imag(root))) < 1e-9
+                           and 0 < float(np.real(root)) <= upper_theta2]
+    if non_monotonic_roots:
+        raise ValueError("fisheye radial map is not monotonic up to sensor boundary")
+    if crossing.size:
+        low = float(theta_grid[max(0, upper_index - 1)])
+        high = float(theta_grid[upper_index])
+        for _ in range(64):
+            middle = (low + high) / 2
+            if theta_distorted(middle) < theta_limit:
+                low = middle
+            else:
+                high = middle
+        theta_max = (low + high) / 2
+    else:
+        theta_max = float(theta_grid[-1])
+
+    safe_radius_px = output_focal_px * np.tan(theta_max)
+    output_corner_radius = float(np.hypot((width - 1) / 2, (height - 1) / 2))
+    if safe_radius_px >= output_corner_radius:
+        roi_width, roi_height = width, height
+    else:
+        scale = safe_radius_px / output_corner_radius
+        roi_width = min(width, int(np.floor(scale * (width - 1) + 1)))
+        roi_height = min(height, int(np.floor(scale * (height - 1) + 1)))
+        if roi_width % 2 != width % 2:
+            roi_width -= 1
+        if roi_height % 2 != height % 2:
+            roi_height -= 1
+    if roi_width < 1 or roi_height < 1:
+        raise ValueError("output focal length leaves no sensor-bound-safe output rectangle")
+    return {
+        "theta_distorted_limit": theta_limit,
+        "theta_max_rad": theta_max,
+        "safe_radius_px": float(safe_radius_px),
+        "sensor_bound_safe_roi": [int(roi_width), int(roi_height)],
+        "roi_area_fraction": float(roi_width * roi_height / (width * height)),
+        "output_corner_radius_px": output_corner_radius,
+    }
 
 
 def build_fisheye_remap(
@@ -108,9 +196,11 @@ def correct_fisheye(
     image: np.ndarray, camera_matrix: np.ndarray, distortion: np.ndarray,
     balance: float = 0.0, angle_degrees: float = 0.0,
     affine_matrix: np.ndarray | None = None,
+    output_focal_px: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     height, width = image.shape[:2]
-    output_k = output_camera_matrix(width, height, camera_matrix, distortion, balance)
+    output_k = (output_camera_matrix(width, height, camera_matrix, distortion, balance)
+                if output_focal_px is None else centered_output_camera_matrix(width, height, output_focal_px))
     map_x, map_y = build_fisheye_remap(
         width, height, camera_matrix, distortion, output_k, angle_degrees, affine_matrix,
     )
@@ -186,6 +276,8 @@ def main() -> None:
     r.add_argument("--image", type=Path, required=True)
     r.add_argument("--calibration", type=Path, required=True)
     r.add_argument("--balance", type=float, default=0.0, help="0..1; more FOV may cause borders")
+    r.add_argument("--output-focal-px", type=float,
+                   help="centered rectilinear output focal length in pixels; use if automatic view is invalid")
     r.add_argument("--angle", type=float, default=0.0)
     r.add_argument("--affine", type=Path, help="JSON containing a forward 2x3 affine_matrix")
     r.add_argument("--output", type=Path, required=True)
@@ -209,6 +301,7 @@ def main() -> None:
             affine = np.asarray(json.loads(args.affine.read_text(encoding="utf-8"))["affine_matrix"])
         corrected, mask, _ = correct_fisheye(
             image, record["camera_matrix"], record["distortion"], args.balance, args.angle, affine,
+            args.output_focal_px,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         if not cv2.imwrite(str(args.output), corrected):

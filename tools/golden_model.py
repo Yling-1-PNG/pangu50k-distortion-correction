@@ -18,6 +18,8 @@ import numpy as np
 
 def load_calibration(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     record = json.loads(Path(path).read_text(encoding="utf-8"))
+    if record.get("model", "brown_conrady") != "brown_conrady":
+        raise ValueError("calibration is not a Brown-Conrady record")
     camera_matrix = np.asarray(record["camera_matrix"], dtype=np.float64)
     distortion = np.asarray(record["distortion"], dtype=np.float64).reshape(-1)
     if camera_matrix.shape != (3, 3) or distortion.size < 4:
@@ -40,6 +42,7 @@ def build_remap(
     distortion: np.ndarray,
     angle_degrees: float = 0.0,
     affine_matrix: np.ndarray | None = None,
+    output_camera_matrix: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Map output (rectified, then forward-affine-transformed) to camera pixels."""
     if width <= 0 or height <= 0 or not np.isfinite(angle_degrees):
@@ -47,9 +50,21 @@ def build_remap(
     if affine_matrix is not None and angle_degrees != 0:
         raise ValueError("choose either angle_degrees or affine_matrix")
     k = np.asarray(camera_matrix, dtype=np.float64)
+    output_k = (k if output_camera_matrix is None
+                else np.asarray(output_camera_matrix, dtype=np.float64))
     d = np.asarray(distortion, dtype=np.float64).reshape(-1)
-    if k.shape != (3, 3) or d.size not in (4, 5):
+    if (k.shape != (3, 3) or output_k.shape != (3, 3)
+            or d.size not in (4, 5)):
         raise ValueError("expected a 3x3 camera matrix and 4 or 5 distortion coefficients")
+    if (not np.all(np.isfinite(k)) or not np.all(np.isfinite(output_k))
+            or not np.all(np.isfinite(d))
+            or k[0, 0] <= 0 or k[1, 1] <= 0
+            or output_k[0, 0] <= 0 or output_k[1, 1] <= 0
+            or not np.allclose(k[2], [0, 0, 1])
+            or not np.allclose(output_k[2], [0, 0, 1])
+            or abs(k[0, 1]) > 1e-12 or abs(k[1, 0]) > 1e-12
+            or abs(output_k[0, 1]) > 1e-12 or abs(output_k[1, 0]) > 1e-12):
+        raise ValueError("source and output camera matrices must be finite, zero-skew, and have positive focal lengths")
     k1, k2, p1, p2 = d[:4]
     k3 = d[4] if d.size == 5 else 0.0
 
@@ -67,8 +82,8 @@ def build_remap(
     ux = inverse[0, 0] * xx + inverse[0, 1] * yy + inverse[0, 2]
     uy = inverse[1, 0] * xx + inverse[1, 1] * yy + inverse[1, 2]
 
-    x = (ux - k[0, 2]) / k[0, 0]
-    y = (uy - k[1, 2]) / k[1, 1]
+    x = (ux - output_k[0, 2]) / output_k[0, 0]
+    y = (uy - output_k[1, 2]) / output_k[1, 1]
     r2 = x * x + y * y
     radial = 1.0 + k1 * r2 + k2 * r2 * r2 + k3 * r2 * r2 * r2
     xd = x * radial + 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x)
@@ -87,10 +102,13 @@ def correct_image(
     return cv2.remap(image, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
 
 
-def calibrate(images: list[Path], columns: int, rows: int, square_size: float) -> dict:
+def calibrate(images: list[Path], columns: int, rows: int, square_size: float,
+              radial_order: int = 2) -> dict:
     """columns/rows are inner corners; square_size uses the caller's length unit."""
-    if columns < 2 or rows < 2 or square_size <= 0:
+    if columns < 2 or rows < 2 or not np.isfinite(square_size) or square_size <= 0:
         raise ValueError("invalid checkerboard geometry")
+    if radial_order not in (2, 3):
+        raise ValueError("radial_order must be 2 or 3")
     pattern = (columns, rows)
     object_grid = np.zeros((columns * rows, 3), np.float32)
     object_grid[:, :2] = np.mgrid[0:columns, 0:rows].T.reshape(-1, 2) * square_size
@@ -118,11 +136,14 @@ def calibrate(images: list[Path], columns: int, rows: int, square_size: float) -
     if len(accepted) < 3:
         raise ValueError(f"only {len(accepted)} usable views; provide at least 3 diverse checkerboard photos")
     rms, matrix, coefficients, _, _ = cv2.calibrateCamera(
-        object_points, image_points, image_size, None, None
+        object_points, image_points, image_size, None, None,
+        flags=cv2.CALIB_FIX_K3 if radial_order == 2 else 0,
     )
     return {
+        "model": "brown_conrady",
+        "radial_order": radial_order,
         "camera_matrix": matrix.tolist(),
-        "distortion": coefficients.reshape(-1)[:5].tolist(),
+        "distortion": coefficients.reshape(-1)[:4 if radial_order == 2 else 5].tolist(),
         "image_size": list(image_size),
         "rms_reprojection_error_px": float(rms),
         "checkerboard_inner_corners": [columns, rows],
@@ -171,6 +192,8 @@ def main() -> None:
     c.add_argument("--columns", type=int, required=True, help="inner corners per row")
     c.add_argument("--rows", type=int, required=True, help="inner corners per column")
     c.add_argument("--square-size", type=float, required=True, help="e.g. millimetres")
+    c.add_argument("--radial-order", type=int, choices=(2, 3), default=2,
+                   help="2: fit k1,k2,p1,p2 with k3 fixed at zero (default); 3: also fit k3")
     c.add_argument("--output", type=Path, required=True)
     r = commands.add_parser("correct", help="undistort and optionally rotate one image")
     r.add_argument("--image", type=Path, required=True)
@@ -182,7 +205,8 @@ def main() -> None:
     d.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "calibrate":
-        result = calibrate([Path(p) for p in sorted(glob.glob(args.images))], args.columns, args.rows, args.square_size)
+        result = calibrate([Path(p) for p in sorted(glob.glob(args.images))],
+                           args.columns, args.rows, args.square_size, args.radial_order)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"accepted={len(result['accepted_images'])} rms_px={result['rms_reprojection_error_px']:.4f}")
