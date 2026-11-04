@@ -64,7 +64,6 @@ module ddr_tagged_read_queue #(
             held_tag <= 4'd0;
             rsp_valid <= 1'b0;
             rsp_tag <= 4'd0;
-            rsp_data <= 256'd0;
             rsp_error <= 1'b0;
             fault <= 1'b0;
         end else begin
@@ -87,7 +86,6 @@ module ddr_tagged_read_queue #(
                 end else begin
                     rsp_valid <= 1'b1;
                     rsp_tag <= axi_rid;
-                    rsp_data <= axi_rdata;
                     rsp_error <= !axi_rlast;
                     busy[axi_rid] <= 1'b0;
                     issued[axi_rid] <= 1'b0;
@@ -97,4 +95,16 @@ module ddr_tagged_read_queue #(
             end
         end
     end
+    // The response has no RREADY: rsp_data is meaningful only with rsp_valid.
+    // Sample the bus every cycle; metadata/valid retain the exact previous
+    // response latency. This removes late DDR RVALID / ID checks from the
+    // clock-enable cone of 256 payload registers. The bridge consumes this
+    // payload only on its validated fill event.
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            rsp_data <= 256'd0;
+        else
+            rsp_data <= axi_rdata;
+    end
+
 endmodule
